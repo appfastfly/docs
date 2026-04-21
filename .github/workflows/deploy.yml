@@ -39,10 +39,10 @@ jobs:
         run: |
           # Bump package.json version and commit with [skip ci] to prevent re-triggering this workflow
           npm version patch -m "chore(release): %s [skip ci]"
-          
+
           # Push the commit and the generated tag to 'main'
           git push origin main --follow-tags
-          
+
           # Output the new tag for the next step
           NEW_TAG=$(git describe --tags --abbrev=0)
           echo "new_tag=${NEW_TAG}" >> $GITHUB_OUTPUT
@@ -51,7 +51,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.version.outputs.new_tag }}
-          name: Release ${{ steps.version.outputs.new_tag }}
+          name: ${{ steps.version.outputs.new_tag }}
           generate_release_notes: true
 
   deploy-pages:
@@ -90,7 +90,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './build'
+          path: "./build"
 
       - name: Deploy to GitHub Pages
         id: deployment
