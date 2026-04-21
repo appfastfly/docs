@@ -1,0 +1,97 @@
+name: Deploy and Release Docs
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  bump-and-release:
+    # Skip if the commit message contains [skip ci] (this avoids infinite loops)
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    outputs:
+      new_tag: ${{ steps.version.outputs.new_tag }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump Version in package.json
+        id: version
+        run: |
+          # Bump package.json version and commit with [skip ci] to prevent re-triggering this workflow
+          npm version patch -m "chore(release): %s [skip ci]"
+          
+          # Push the commit and the generated tag to 'main'
+          git push origin main --follow-tags
+          
+          # Output the new tag for the next step
+          NEW_TAG=$(git describe --tags --abbrev=0)
+          echo "new_tag=${NEW_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.new_tag }}
+          name: Release ${{ steps.version.outputs.new_tag }}
+          generate_release_notes: true
+
+  deploy-pages:
+    # Always try to deploy the pages, ensuring we get the latest stable version
+    needs: bump-and-release
+    # We use always() and check success to make sure it deploys EVEN if bump-and-release was skipped due to [skip ci]
+    if: |
+      always() && 
+      (needs.bump-and-release.result == 'success' || needs.bump-and-release.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          # Pull the fresh state from main branch so we have the bumped package.json
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Docusaurus
+        run: npm run build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './build'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
